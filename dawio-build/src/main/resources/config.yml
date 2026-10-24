@@ -1,0 +1,11 @@
+kits:
+  starter:
+    slot: 0
+    items:
+      - DIAMOND_SWORD:1
+      - APPLE:5
+  builder:
+    slot: 1
+    items:
+      - IRON_PICKAXE:1
+      - COBBLESTONE:64
