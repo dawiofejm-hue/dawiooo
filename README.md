@@ -1,0 +1,2 @@
+# dawiooo
+buludowanie pllikow 
