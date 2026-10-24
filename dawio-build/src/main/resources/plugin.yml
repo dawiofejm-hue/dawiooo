@@ -1,0 +1,11 @@
+name: KitGui
+version: 1.0.0
+main: pl.dawio.plugin.KitGuiPlugin
+api-version: 1.21
+description: Provides a GUI for selecting predefined kits.
+commands:
+  kitgui:
+    description: Opens the kit selection GUI.
+    usage: /<command>
+    permission: kitgui.use
+    permission-message: You do not have permission to use this command.
