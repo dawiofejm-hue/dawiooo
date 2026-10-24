@@ -1,0 +1,86 @@
+name: build
+
+on:
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "ID zlecenia (nadaje je strona)"
+        required: true
+
+concurrency:
+  group: build-${{ inputs.job }}
+
+jobs:
+  # Kompilacja kodu od AI: BEZ uprawnień do zapisu w repozytorium.
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Zbuduj plugin
+        env:
+          JOB: ${{ inputs.job }}
+        run: |
+          set +e
+          mkdir -p out work
+          python3 scripts/job.py prepare "$JOB" work
+          if [ -f work/pom.xml ]; then
+            NAME=$(cat work/.jarname)
+            mvn -B -ntp -f work/pom.xml -Djar.name="$NAME" package > out/build.log 2>&1
+            python3 scripts/job.py finish work "$NAME"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: out-${{ inputs.job }}
+          path: |
+            out/status.json
+            out/plugin.jar
+          if-no-files-found: ignore
+          retention-days: 1
+
+  # Zapis wyniku do repozytorium (tu nie uruchamia się żaden kod od AI).
+  publish:
+    needs: build
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: out-${{ inputs.job }}
+          path: out
+      - name: Zapisz wynik
+        env:
+          JOB: ${{ inputs.job }}
+        run: |
+          set -e
+          [[ "$JOB" =~ ^[0-9]{14}-[a-f0-9]{8}$ ]] || exit 1
+          mkdir -p "results/$JOB" out
+          [ -f out/status.json ] || echo '{"ok":false,"name":"plugin.jar","log":"Budowanie nie powiodło się (przekroczony czas lub błąd GitHub Actions)."}' > out/status.json
+          cp out/status.json "results/$JOB/"
+          [ -f out/plugin.jar ] && cp out/plugin.jar "results/$JOB/" || true
+          git rm -q --ignore-unmatch "jobs/$JOB.json"
+          # zostaw tylko 30 ostatnich wyników i zleceń
+          ls -1 results | sort | head -n -30 | while read d; do git rm -rq "results/$d"; done
+          ls -1 jobs 2>/dev/null | sort | head -n -30 | while read f; do git rm -q "jobs/$f"; done
+          git config user.name "dawio-builder"
+          git config user.email "builder@users.noreply.github.com"
+          git add -A
+          git commit -qm "wynik $JOB"
+          for i in 1 2 3 4 5 6; do
+            git pull --rebase -q && git push -q && exit 0
+            sleep $((RANDOM % 6 + 2))
+          done
+          exit 1
